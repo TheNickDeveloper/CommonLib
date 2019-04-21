@@ -1,0 +1,717 @@
+' Create By: Eagle T X Chen on 2016-07-11 v1.0
+'
+'      Updated on 2017-04-18 update the function 'GetFieldValue', make it steady
+'      Updated on 2017-10-09 1. add new property 'CommandTimeOut'
+'                            2. add a function to connect oracle database
+'                            3. the function of 'GetTablesName' can return a dictionary or a string array
+'                            4. add a function 'GetAllRowsData' return a array of the recordset
+'      Updated on 2017-12-26 1. add new function 'CreateSchema', this help to query csv file
+'                            2. update 'GetAllRowsData'
+' v1.7 Updated on 2018-01-25 1. split 'CreateSchema' as 2 function 'CreateSchemaByDelimiter' / 'CreateSchemaByFieldLength'
+'                            2. enhance function 'GetAllRowsData'
+'                            3. adjust variant name & class property
+' v1.7.1 Updated on 2018-02-09 1. Fix code defect
+'                              2. Enhance function 'CreateSchemaByDelimiter' / 'CreateSchemaByFieldLength'
+Option Explicit
+
+'connect info variable
+Private connectType As String
+Private DBserver As String
+Private DBbase As String
+Private DBuser As String
+Private DBpassword As String
+Private DBport As String
+Private DBlanguage As String
+Private DBSid As String
+Private IsSSPI As Boolean
+Private filePath As String
+Private containHeader As String
+Private executeTimeOut As Long
+Private schemaPath As String
+
+'ADODB object
+Public Rec As Object
+Private Conn As Object
+Private Comm As Object
+
+Private isConnected As Boolean
+Private executeStatement As String
+Private ErrMsg As String
+
+Public Enum ObjectType
+    typeArray
+    typeDictionary
+End Enum
+
+Public Enum HeaderType
+    typeContainHeader
+    typeNoHeader
+End Enum
+
+'**************************************************************
+' Class Initialize & Terminate
+'**************************************************************
+Private Sub Class_Initialize()
+    Set Conn = CreateObject("ADODB.CONNECTION")
+    Set Rec = CreateObject("ADODB.RECORDSET")
+    Set Comm = CreateObject("ADODB.COMMAND")
+    containHeader = "Yes"
+    executeTimeOut = 60
+    schemaPath = ""
+End Sub
+
+Private Sub Class_Terminate()
+    Call CloseObject(Conn, True)
+    Call CloseObject(Rec, True)
+    Set Comm = Nothing
+    
+    Call killSchemaFile
+End Sub
+
+Public Property Let CommandTimeOut(ByVal val As Long)
+    If CLng(val) > 0 Then
+        executeTimeOut = val
+    End If
+End Property
+
+Public Property Get CommandTimeOut() As Long
+    CommandTimeOut = executeTimeOut
+End Property
+
+Public Property Let StatementText(ByVal val As String)
+    executeStatement = val
+End Property
+
+Public Property Get StatementText() As String
+    StatementText = executeStatement
+End Property
+
+Public Property Get getErrMessage() As String
+    getErrMessage = ErrMsg
+End Property
+
+Public Property Get getRecordCount() As Long
+    If Rec.State = 1 Then
+        getRecordCount = Rec.recordCount
+    Else
+        getRecordCount = -1
+    End If
+End Property
+
+Public Property Get getFieldsCount() As Long
+    If Rec.State = 1 Then
+        getFieldsCount = Rec.Fields.Count
+    Else
+        getFieldsCount = -1
+    End If
+End Property
+
+Public Property Get getConnectStatus() As Boolean
+    getConnectStatus = isConnected
+End Property
+
+'**************************************************************
+' Class Public Method
+'**************************************************************
+Public Sub CloseConnect()
+    Call CloseObject(Conn)
+    isConnected = False
+    connectType = ""
+    filePath = ""
+    containHeader = "Yes"
+    DBuser = ""
+    DBpassword = ""
+End Sub
+
+Public Sub CloseRecordset()
+    Call CloseObject(Rec)
+End Sub
+
+Public Function ConnectExcel(ByVal dataFilePath As String, Optional ByVal HDR As HeaderType = typeContainHeader) As Boolean
+    connectType = "EXCEL"
+    filePath = dataFilePath
+    containHeader = IIf(HDR = typeContainHeader, "Yes", "No")
+    
+    Call OpenConnector
+End Function
+
+Public Function ConnectAccess(ByVal dataFilePath As String, Optional ByVal passWord As String = "") As Boolean
+      connectType = "ACCESS"
+      filePath = dataFilePath
+      DBpassword = passWord
+      
+      Call OpenConnector
+End Function
+
+Public Function connectText(ByVal dataFilePath As String, Optional ByVal HDR As HeaderType = typeContainHeader) As Boolean
+    connectType = "TXT"
+    filePath = dataFilePath
+    containHeader = IIf(HDR = typeContainHeader, "Yes", "No")
+    
+    Call OpenConnector
+End Function
+
+Public Function ConnectSQLite(ByVal dataFilePath As String) As Boolean
+      connectType = "SQLITE"
+      filePath = dataFilePath
+    
+      Call OpenConnector
+End Function
+
+Public Function ConnectMySQL(ByVal Server As String, ByVal DataBase As String, ByVal userName As String, ByVal passWord As String) As Boolean
+    connectType = "MYSQL"
+    DBserver = Server
+    DBbase = ataBase
+    DBuser = userName
+    DBpassword = passWord
+    
+    ConnectMySQL = OpenConnector
+End Function
+
+Public Function ConnectMSSQL(ByVal serverName As String, ByVal DataBase As String, ByVal userName As String, ByVal passWord As String, Optional ByVal SSPI As Boolean = False, Optional ByVal Port As String = "", Optional ByVal Language = "") As Boolean
+    connectType = "MSSQL"
+    DBserver = serverName
+    DBbase = DataBase
+    DBuser = userName
+    DBpassword = passWord
+    DBlanguage = Language
+    DBport = Port
+    IsSSPI = SSPI
+    
+    ConnectMSSQL = OpenConnector
+End Function
+
+Public Function ConnectIBMDA400(ByVal serverName As String, Optional ByVal userName As String = "", Optional ByVal passWord As String = "") As Boolean
+    connectType = "DA400"
+    DBserver = serverName
+    DBuser = userName
+    DBpassword = passWord
+    
+    ConnectIBMDA400 = OpenConnector
+End Function
+
+Public Function ConnectOracle(ByVal serverName As String, ByVal userName As String, ByVal passWord As String, Optional ByVal Port As String = "", Optional ByVal SID As String = "") As Boolean
+    connectType = "ORACLE"
+    DBserver = serverName
+    DBuser = userName
+    DBpassword = passWord
+    DBport = Port
+    DBSid = SID
+    
+    ConnectOracle = OpenConnector
+End Function
+
+Private Function OpenConnector() As Boolean
+    Dim connectText As String
+    
+    On Error Resume Next
+    ErrMsg = ""
+    isConnected = False
+    Call killSchemaFile
+    
+    Select Case connectType
+        Case "EXCEL"
+            connectText = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" & filePath & ";Extended Properties=""Excel 12.0;IMEX=1;HDR=" & containHeader & ";"""
+        
+        Case "ACCESS"
+            connectText = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" & filePath & IIf(Len(DBpassword), ";Jet OLEDB:Database Password=" & DBpassword, "")
+        
+        Case "TXT"
+            If InStr(Application.OperatingSystem, "64-bit") Then
+                connectText = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" & getFileFolder & ";Extended Properties=""TEXT;HDR=" & containHeader & ";FMT=Delimited"""
+            Else
+                connectText = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & getFileFolder & ";Extended Properties=""TEXT;HDR=" & containHeader & ";FMT=Delimited"""
+            End If
+            
+        Case "MSSQL"
+            connectText = "Provider=SQLOLEDB;DataSource=" & DBserver & ";dataBase=" & DBbase
+            If Not IsSSPI Then
+                connectText = connectText & ";UID=" & DBuser & ";PWD=" & DBpassword
+            Else
+                connectText = connectText & ";Integrated Security=SSPI"
+            End If
+            connectText = connectText & IIf(Len(DBport), ";NetWork Address=" & DBserver & "," & DBport, "") & IIf(Len(DBlanguage), ";Language=" & DBlanguage, "")
+            
+        Case "MYSQL"
+            connectText = "Driver={MySql ODBC 5.1 Driver};Server=" & DBserver & ";DataBase=" & DBbase & ";UID=" & DBuser & ";PWD=" & DBpassword & ";Option=3;Stmt=Set Names GBK"
+        
+        Case "SQLITE"
+            connectText = "Driver={SQLite3 ODBC Driver};DataBase=" & filePath
+        
+        Case "DA400"
+            connectText = "Provider=IBMDA400;Data Source=" & DBserver & ";Persist Security Info=True;"
+            If Len(DBuser) Or Len(DBpassword) Then
+                connectText = connectText & "User ID=" & DBuser & ";Password=" & DBpassword & ";"
+            End If
+        
+        Case "ORACLE"
+            connectText = "Provider=OraOLEDB.Oracle.1;Password=" & DBpassword & ";User ID=" & DBuser & ";Data Source="
+            If Len(DBport) = 0 And Len(DBSid) = 0 Then
+                connectText = connectText & DBserver & ";"
+            Else
+                connectText = connectText & "(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=" & DBserver & ")(PORT=" & DBport & "))(CONNECT_DATA=(SID=" & DBSid & ")));"
+            End If
+            
+            connectText = connectText & "Persist Security Info=False"
+        Case Else
+            connectText = "'"
+    End Select
+  
+    If Len(connectText) Then
+        If Conn.State = 1 Then
+            Conn.Close
+        End If
+        
+        Conn.CommandTimeOut = executeTimeOut
+        Conn.Open connectText
+    End If
+
+    If Err.Number Then
+        ErrMsg = Err.Description
+        Err.Clear
+        Debug.Print ErrMsg
+    Else
+        isConnected = True
+        Comm.ActiveConnection = Conn
+    End If
+    
+    DBpassword = ""
+    
+    OpenConnector = isConnected
+End Function
+
+Public Function ACE_DBCompaction() As Boolean
+    Dim dbEngine As Object
+    Dim strPath As String, tempDB As String, dataBaseName As String, originalDB As String, newDB As String
+    Dim iPos As Integer
+    
+    On Error Resume Next
+    ACE_DBCompaction = True
+    
+    If isConnected And (connectType = "ACCESS") Then
+        ErrMsg = ""
+        
+        strPath = getFileFolder
+        dataBaseName = Mid(filePath, Len(strPath) + 1)
+        iPos = InStrRev(dataBaseName, ".")
+        
+        tempDB = strPath & Left(dataBaseName, iPos - 1) & "_t" & Mid(dataBaseName, iPos)
+        
+        'close current connection
+        Conn.Close
+        
+        'create JetEngine object
+        Set dbEngine = CreateObject("JRO.JetEngine")
+        
+        'compact database
+        originalDB = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" & filePath & IIf(Len(DBpassword), ";Jet OLEDB:Database Password=" & DBpassword, "")
+        newDB = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" & tempDB & IIf(Len(DBpassword), ";Jet OLEDB:Database Password=" & DBpassword, "") & ";Jet OLEDB:Engine Type=5"
+        dbEngine.CompactDatabase originalDB, newDB
+        
+        'delete source Access file
+        Kill filePath
+        
+        'rename temp database
+        Name tempDB As filePath
+
+        'reconnect database
+        Call OpenConnector
+    End If
+
+    If Err.Number Then
+        ErrMsg = Err.Description
+        ACE_DBCompaction = False
+        Err.Clear
+        Call OpenConnector
+    End If
+    
+    Set dbEngine = Nothing
+End Function
+
+Public Function CreateSchemaByDelimiter(ByVal fieldsNameOrFieldsCount As Variant, Optional ByVal delimitChar As String = "TAB", Optional ByVal targetFile As String = "") As Boolean
+    Dim iStep As Long, isHeader As Boolean, arrHeader As Variant
+    
+    isHeader = Not IsNumeric(fieldsNameOrFieldsCount)
+    
+    If isHeader Then
+        arrHeader = Split(fieldsNameOrFieldsCount, ",")
+    Else
+        ReDim arrHeader(fieldsNameOrFieldsCount - 1)
+        For iStep = 1 To fieldsNameOrFieldsCount
+            arrHeader(iStep - 1) = "f" & iStep
+        Next
+    End If
+    
+    If Len(targetFile) = 0 Then
+        targetFile = filePath
+    End If
+    
+    CreateSchemaByDelimiter = createSchema(targetFile, arrHeader, "", isHeader, delimitChar)
+End Function
+
+Public Function CreateSchemaByFieldLength(ByVal fieldsLength As String, Optional ByVal fieldsHeader As String = "", Optional ByVal targetFile As String = "") As Boolean
+    Dim iStep As Long, isHeader As Boolean, arrHeader As Variant, arrLength As Variant
+
+    arrLength = Split(fieldsLength, ",")
+
+    isHeader = (Len(fieldsHeader) > 0)
+    If isHeader Then
+        arrHeader = Split(fieldsHeader, ",")
+    Else
+        ReDim arrHeader(UBound(arrLength))
+        For iStep = 0 To UBound(arrLength)
+            arrHeader(iStep) = "f" & iStep + 1
+        Next
+    End If
+    
+    If Len(targetFile) = 0 Then
+        targetFile = filePath
+    End If
+    
+    CreateSchemaByFieldLength = createSchema(targetFile, arrHeader, arrLength, isHeader, "")
+End Function
+
+Private Function createSchema(ByVal targetFilePath As String, ByVal arrHeader As Variant, ByVal arrLength As Variant, ByVal isFirstRowHeader As Boolean, ByVal delimitChar As String) As Boolean
+    Dim iStep As Long, outNum As Long, isFixedLength As Boolean, outputText As String
+    
+    On Error Resume Next
+    
+    isFixedLength = False
+    outputText = "[" & Mid(targetFilePath, InStrRev(targetFilePath, "\") + 1) & "]" & vbCrLf
+    Select Case UCase(delimitChar)
+        Case ","
+            outputText = outputText & "Format=CSVDelimited" & vbCrLf
+        Case "TAB"
+            outputText = outputText & "Format=TabDelimited" & vbCrLf
+        Case ""
+            outputText = outputText & "Format=FixedLength" & vbCrLf
+            isFixedLength = True
+        Case Else
+            outputText = outputText & "Format=Delimited(" & delimitChar & ")" & vbCrLf
+    End Select
+    
+    If isFirstRowHeader Then
+        outputText = outputText & "ColNameHeader=True" & vbCrLf & vbCrLf
+    Else
+        outputText = outputText & "ColNameHeader=False" & vbCrLf & vbCrLf
+    End If
+    
+    For iStep = 0 To UBound(arrHeader)
+        outputText = outputText & "Col" & iStep + 1 & "=""" & arrHeader(iStep) & """ Text"
+        If isFixedLength Then
+            outputText = outputText & " Width " & arrLength(iStep)
+        End If
+        outputText = outputText & vbCrLf
+    Next
+    
+    outNum = FreeFile
+    schemaPath = Left(targetFilePath, InStrRev(targetFilePath, "\")) & "Schema.ini"
+    Open schemaPath For Output As #outNum
+    Print #outNum, outputText
+    Close #outNum
+    
+    If Err.Number Then
+        ErrMsg = Err.Description
+        Err.Clear
+        createSchema = False
+    Else
+        createSchema = True
+    End If
+End Function
+
+Public Sub ExecuteProc(ByVal ProcName As String, Optional ByVal Param As String = "", Optional ByVal isReturnRecordset As Boolean = False)
+    On Error Resume Next
+    
+    If isConnected Then
+        ErrMsg = ""
+        
+        If Len(Param) Then
+            ProcName = ProcName & "(" & Param & ")"
+        End If
+    
+        With Comm
+            .CommandText = ProcName
+            'adCmdStroreProc = 4
+            .CommandType = 4
+            .Prepared = True
+            
+            If isReturnRecordset Then
+                Call CloseObject(Rec)
+                Set Rec = .Execute
+            Else
+                .Execute
+            End If
+        End With
+
+        If Err.Number Then
+            ErrMsg = Err.Description
+            Err.Clear
+        End If
+    End If
+End Sub
+
+Public Function ExecuteSQL(Optional ByVal strSQL As String = "") As Boolean
+    On Error Resume Next
+    ExecuteSQL = False
+    
+    If isConnected Then
+        ErrMsg = ""
+        If Len(strSQL) Then
+            executeStatement = strSQL
+        End If
+        
+        If Len(executeStatement) Then
+            Conn.Execute executeStatement
+        End If
+
+        If Err.Number Then
+            ErrMsg = Err.Description
+            Err.Clear
+            Debug.Print ErrMsg
+            Debug.Print executeStatement
+        Else
+            ExecuteSQL = True
+        End If
+    End If
+End Function
+
+Public Function OpenRecordSet(Optional ByVal strSQL As String = "") As Boolean
+    On Error Resume Next
+    OpenRecordSet = False
+    
+    If isConnected Then
+        ErrMsg = ""
+        
+        If Len(strSQL) Then
+            executeStatement = strSQL
+        End If
+    
+        If Len(executeStatement) Then
+            With Rec
+                If .State = 1 Then
+                    .Close
+                End If
+        
+                'adOpenStatic is 3
+                .CursorType = 3
+                'adUseClient is 3
+                .CursorLocation = 3
+                .Open executeStatement, Conn
+                OpenRecordSet = True
+            End With
+        End If
+
+        If Err.Number Then
+            ErrMsg = Err.Description
+            Err.Clear
+            Debug.Print ErrMsg
+            Debug.Print executeStatement
+        Else
+            OpenRecordSet = True
+        End If
+    End If
+End Function
+
+Public Function GetTablesName(ByVal returnType As ObjectType) As Variant
+    Dim dictName As Object, iStep As Integer, arrItem() As String
+    
+    Set GetTablesName = Nothing
+    
+    If isConnected Then
+        If InStr("EXCEL,MSSQL,ACCESS,", connectType & ",") > 0 Then
+            Select Case connectType
+                Case "EXCEL"
+                    arrItem = getAllTable_XLS
+                Case "MSSQL"
+                    arrItem = getAllTable_MSSQL
+                Case "ACCESS"
+                    arrItem = getAllTable_ACE
+            End Select
+            
+            If returnType = typeArray Then
+                GetTablesName = arrItem
+            ElseIf returnType = typeDictionary Then
+                Set dictName = CreateObject("Scripting.Dictionary")
+                For iStep = LBound(arrItem) To UBound(arrItem)
+                    dictName.Add arrItem(iStep), iStep
+                Next
+                
+                Set GetTablesName = dictName
+            End If
+        End If
+    End If
+End Function
+
+Private Function getAllTable_ACE() As String()
+    Dim tRS As Object
+    Dim strTables As String
+
+    ' adSchemaTables = 20
+    Set tRS = Conn.OpenSchema(20)
+    Do
+        If tRS.Fields("TABLE_TYPE") = "TABLE" Then
+            strTables = strTables & tRS.Fields("TABLE_NAME") & vbCrLf
+        End If
+        tRS.MoveNext
+    Loop Until tRS.EOF
+    
+    If Len(strTables) Then
+        strTables = Left(strTables, Len(strTables) - 2)
+        getAllTable_ACE = Split(strTables, vbCrLf)
+    End If
+End Function
+
+Private Function getAllTable_XLS() As String()
+    Dim tRS As Object
+    Dim strTables As String, iStep As Integer, strField As String
+
+    ' adSchemaTables = 20
+    Set tRS = Conn.OpenSchema(20)
+
+    Do
+        If tRS.Fields("TABLE_TYPE") = "TABLE" Then
+            strField = tRS.Fields("TABLE_NAME").Value
+            strField = Replace(strField, "'", "")
+            If Right(strField, 1) = "$" Then
+                strField = Left(strField, Len(strField) - 1)
+                strTables = strTables & strField & vbCrLf
+            End If
+        End If
+        tRS.MoveNext
+    Loop Until tRS.EOF
+        
+    strTables = Left(strTables, Len(strTables) - 2)
+    getAllTable_XLS = Split(strTables, vbCrLf)
+End Function
+
+Private Function getAllTable_MSSQL() As String()
+    Dim arrReturn() As String
+    Dim iStep As Integer, tabCount As Integer
+    
+    Call OpenRecordSet("SELECT Name FROM dbo.SysObjects WHERE XType='U' ORDER BY Name")
+    tabCount = Rec.recordCount
+    If tabCount Then
+        tabCount = tabCount - 1
+        ReDim arrReturn(tabCount)
+        For iStep = 0 To tabCount
+            arrReturn(iStep) = Rec.Fields(0).Value
+            Rec.MoveNext
+        Next
+        
+        getAllTable_MSSQL = arrReturn
+    End If
+End Function
+
+Public Function GetFieldsName() As String()
+    Dim iStep As Integer, arrTitle() As String
+    
+    With Rec
+        If .State = 1 Then
+            ReDim arrTitle(.Fields.Count - 1)
+            For iStep = 0 To .Fields.Count - 1
+                arrTitle(iStep) = .Fields(iStep).Name
+            Next
+            
+            GetFieldsName = arrTitle
+        End If
+    End With
+End Function
+
+Public Function GetFieldValue(ByVal colField As Variant, Optional ByVal defaultVal As Variant = "") As Variant
+    GetFieldValue = defaultVal
+    
+    If Rec.State = 1 Then
+        If Not IsNull(Rec.Fields(colField).Value) Then
+            GetFieldValue = Rec.Fields(colField).Value
+        Else
+            GetFieldValue = defaultVal
+        End If
+    End If
+End Function
+
+Public Function GetAllRowsData(Optional ByVal isGetHeader As Boolean = False) As Variant
+    Dim iStep As Long, rowNum As Long, headerCount As Long, arrTemp As Variant
+
+    With Rec
+        If .State = 1 Then
+            headerCount = .Fields.Count
+            If isGetHeader Then
+                ReDim arrTemp(1 To .recordCount + 1, 1 To headerCount)
+                rowNum = 2
+
+                For iStep = 1 To headerCount
+                    arrTemp(1, iStep) = .Fields(iStep - 1).Name
+                Next
+            Else
+                ReDim arrTemp(1 To .recordCount, 1 To headerCount)
+                rowNum = 1
+            End If
+
+            Do Until .EOF
+                For iStep = 1 To headerCount
+                    arrTemp(rowNum, iStep) = GetFieldValue(iStep - 1)
+                Next
+                rowNum = rowNum + 1
+                .MoveNext
+            Loop
+
+            .MoveFirst
+            GetAllRowsData = arrTemp
+        Else
+            GetAllRowsData = ""
+        End If
+    End With
+End Function
+
+Public Function GetCurrentRowValueArray(Optional ByVal endCol As Integer = -1) As Variant()
+    Dim iStep As Integer, arrVal() As Variant
+    
+    With Rec
+        If .State = 1 Then
+            If endCol = -1 Or endCol > .Fields.Count Then
+                endCol = .Fields.Count - 1
+            Else
+                endCol = endCol - 1
+            End If
+            ReDim arrVal(endCol)
+            
+            For iStep = 0 To endCol
+                If Not IsNull(.Fields(iStep).Value) Then
+                    arrVal(iStep) = .Fields(iStep).Value
+                Else
+                    arrVal(iStep) = ""
+                End If
+            Next
+            
+            GetCurrentRowValueArray = arrVal
+        End If
+    End With
+End Function
+
+'**************************************************************
+' Internal Method
+'**************************************************************
+Private Sub CloseObject(ByRef obj As Object, Optional IsDestruct As Boolean = False)
+    If Not obj Is Nothing Then
+        If obj.State = 1 Then
+            obj.Close
+        End If
+        
+        If IsDestruct Then
+            Set obj = Nothing
+        End If
+    End If
+End Sub
+
+Private Function getFileFolder() As String
+    getFileFolder = Left(filePath, InStrRev(filePath, "\"))
+End Function
+
+Private Sub killSchemaFile()
+    If Len(schemaPath) > 0 Then
+        If Len(Dir(schemaPath)) > 0 Then
+            Kill schemaPath
+        End If
+    End If
+End Sub
+

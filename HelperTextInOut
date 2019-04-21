@@ -1,0 +1,211 @@
+' Create By: Eagle T X Chen on 2017-03-29
+
+Option Explicit
+Private Declare PtrSafe Sub Sleep Lib "kernel32.dll" (ByVal dwMilliseconds As Long)
+
+Private Const ERR_1 = "Didn't specify the text file path."
+Private Const ERR_2 = "File doesn't exist, can not opened it."
+Private Const ERR_3 = "The specified file folder does not exist."
+Private Const ERR_4 = "Didn't connected text file, can not read data."
+
+Private numInput As Long, numOutput As Long, errNum As Integer
+Private outputPath As String, inputPath As String
+Private errorMessage As String
+Private IsOutPut As Boolean, IsInput As Boolean
+    
+'--------------------------------------------------------------
+'**************************************************************
+'
+' Class Initialize & Terminate
+'
+'**************************************************************
+'--------------------------------------------------------------
+
+Private Sub Class_Initialize()
+    numInput = -1
+    numOutput = -1
+    IsOutPut = False
+    IsInput = False
+    outputPath = ""
+    inputPath = ""
+    errorMessage = ""
+    errNum = 0
+End Sub
+
+Private Sub Class_Terminate()
+    Call CloseWrite
+    Call CloseRead
+End Sub
+
+'--------------------------------------------------------------
+'**************************************************************
+'
+' Class's Property
+'
+'**************************************************************
+'--------------------------------------------------------------
+
+Public Property Get EndofInput() As Boolean
+    EndofInput = False
+    
+    If IsInput Then
+        EndofInput = EOF(numInput)
+    End If
+End Property
+
+Public Property Get GetErrorMessage() As String
+    GetErrorMessage = errorMessage
+End Property
+
+Public Property Get FileFreeNum() As Long
+    FileFreeNum = numOutput
+End Property
+
+'--------------------------------------------------------------
+'**************************************************************
+'
+' Class Public Function & Sub
+'
+'**************************************************************
+'--------------------------------------------------------------
+
+Public Sub ReadyWriteFile(ByVal textFilePath As String)
+    If IsCanOutput(textFilePath) Then
+        Open outputPath For Output As #numOutput
+        IsOutPut = True
+    Else
+        Err.Raise errNum, , errorMessage
+    End If
+End Sub
+
+Public Sub WriteContents(ByVal contentVal As String)
+    If IsOutPut Then
+        Print #numOutput, contentVal
+    End If
+End Sub
+
+Public Sub CloseWrite()
+    If IsOutPut Then
+        Close #numOutput
+        IsOutPut = False
+        numOutput = -1
+    End If
+End Sub
+
+Public Sub ReadyReadFile(ByVal textFilePath As String)
+    If IsCanInput(textFilePath) Then
+        Open inputPath For Input As #numInput
+        IsInput = True
+    Else
+        Err.Raise errNum, , errorMessage
+    End If
+End Sub
+
+Public Function ReadLine() As String
+    If IsInput Then
+        Line Input #numInput, ReadLine
+    Else
+        Err.Raise 4, , ERR_4
+    End If
+End Function
+
+Public Function ReadAll(ByRef arrData() As String, Optional ByVal lineDelimiter As String = vbCrLf) As Boolean
+    Dim tempContents As String
+    Dim arrByte() As Byte
+    
+    ReadAll = False
+    Err.Clear
+
+    If IsInput Then
+        Close #numInput
+        
+        Open inputPath For Binary As #numInput
+        If LOF(numInput) > 0 Then
+            ReDim arrByte(0 To LOF(numInput) - 1) As Byte
+            Get #numInput, , arrByte
+            
+            tempContents = StrConv(arrByte, vbUnicode)
+            arrData = Split(tempContents, lineDelimiter)
+    
+            ReadAll = True
+        End If
+    Else
+        Err.Raise 4, , ERR_4
+    End If
+    
+    If Err.Number Then
+        ReadAll = False
+        Err.Raise Err.Number, , Err.Description
+    End If
+End Function
+
+Public Sub CloseRead()
+    If IsInput Then
+        Close #numInput
+        IsInput = False
+        inputPath = ""
+    End If
+End Sub
+
+'--------------------------------------------------------------
+'**************************************************************
+'
+' Internal Function
+'
+'**************************************************************
+'--------------------------------------------------------------
+
+Private Sub GetFreeNum(ByRef lngNum As Long)
+    lngNum = FreeFile
+End Sub
+
+Private Function IsFileFolderExists(ByVal iPath As String) As Boolean
+    Dim strTemp As String
+
+    strTemp = Left(iPath, InStrRev(iPath, "\"))
+    IsFileFolderExists = Len(Dir(strTemp, vbDirectory))
+End Function
+
+Private Function IsCanOutput(ByVal outPath As String) As Boolean
+    IsCanOutput = False
+    
+    If Len(outPath) = 0 Then
+        errorMessage = ERR_1
+        errNum = 1
+        Exit Function
+    End If
+    
+    If Not IsFileFolderExists(outPath) Then
+        errorMessage = ERR_3
+        errNum = 3
+        Exit Function
+    End If
+    
+    Call CloseWrite
+    outputPath = outPath
+    Call GetFreeNum(numOutput)
+    
+    IsCanOutput = True
+End Function
+
+Private Function IsCanInput(ByVal inPath As String) As Boolean
+    IsCanInput = False
+    
+    If Len(inPath) = 0 Then
+        errorMessage = ERR_1
+        errNum = 1
+        Exit Function
+    End If
+    
+    If Len(Dir(inPath)) = 0 Then
+        errorMessage = ERR_2
+        errNum = 2
+        Exit Function
+    End If
+    
+    Call CloseRead
+    inputPath = inPath
+    Call GetFreeNum(numInput)
+    
+    IsCanInput = True
+End Function

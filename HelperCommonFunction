@@ -1,0 +1,220 @@
+Option Explicit
+
+'=============================================
+
+'Exception Catch
+
+'=============================================
+
+Public Function ExceptionError()
+    If Err.Number Then
+         MsgBox Err.Description, vbOKOnly, "Error" & " - " & Err.Source
+    End If
+End Function
+
+'=============================================
+
+'Data manipulating function
+
+'=============================================
+
+'get the value between strings
+Public Function GetValueBetweenString(ByVal Value As String, ByVal Mark_1 As String, ByVal Mark_2 As String) As Variant
+    Dim openPos As Integer, closePos As Integer, Rseult As String
+    
+    If Len(Value) Then
+        openPos = InStr(Value, Mark_1)
+        closePos = InStr(Value, Mark_2)
+        GetValueBetweenString = Mid(Value, openPos + 1, closePos - openPos - 1)
+    End If
+End Function
+
+'get Transfer To Date
+Public Function GetTransToDate(ByVal lngTargetDate As Variant, Optional ByVal formatText As String = "") As Variant
+    Dim formatDate As Variant
+    
+    If Len(lngTargetDate) = 8 And IsNumeric(lngTargetDate) Then
+        formatDate = DateSerial(Left(lngTargetDate, 4), Mid(lngTargetDate, 5, 2), Right(lngTargetDate, 2))
+        GetTransToDate = formatDate
+    Else
+        GetTransToDate = lngTargetDate
+    End If
+End Function
+
+'put value from array to dic
+Public Function SetDicFromArray(ByVal arrTarget As Variant, ByVal inputKeyIndex As String, ByVal inputValueIndex As String, Optional ByVal delimiteChar As String = ",") As Dictionary
+    Dim i As Long, j As Long, key As Variant, Value As Variant, arrTemp As Variant, TargetDic As New Dictionary, arrKeyIndex() As String, arrResultIndex() As String
+    
+    arrKeyIndex = Split(inputKeyIndex, ",")
+    arrResultIndex = Split(inputValueIndex, ",")
+    
+    For i = 1 To UBound(arrTarget)
+        For j = LBound(arrKeyIndex) To UBound(arrKeyIndex)
+            key = key & arrTarget(i, arrKeyIndex(j))
+        Next
+        
+        For j = LBound(arrResultIndex) To UBound(arrResultIndex)
+            If j = 0 Then
+                Value = arrTarget(i, arrResultIndex(j))
+            Else
+                Value = Value & delimiteChar & arrTarget(i, arrResultIndex(j))
+            End If
+        Next
+    
+        If Not TargetDic.Exists(key) Then
+            TargetDic.Add key, Value
+        End If
+        
+        key = ""
+        Value = ""
+    Next
+    
+    Set SetDicFromArray = TargetDic
+End Function
+
+'=============================================
+
+'Excel Workbook & Worksheet function
+
+'=============================================
+
+'Column Count
+Public Function GetUsedColNum(ByVal wsName As Worksheet, Optional ByVal lngStartRow As Long = 1) As Long
+    GetUsedColNum = wsName.Cells(lngStartRow, Columns.Count).End(xlToLeft).Column
+End Function
+
+'Row Count
+Public Function GetUsedRowNum(ByVal wsName As Worksheet, Optional ByVal lngStartCol As Long = 1) As Long
+    GetUsedRowNum = wsName.Cells(Rows.Count, lngStartCol).End(xlUp).Row
+End Function
+
+'from worksheet to array
+Public Function ConvertRangeToArray(ByVal wsTarget As Worksheet, ByVal startRow As Integer, startCol As Integer) As Variant
+    Dim usedRow As Long, usedCol As Long, arrTemp As Variant
+
+    usedRow = GetUsedRowNum(wsTarget, startCol)
+    usedCol = GetUsedColNum(wsTarget, startRow)
+    With wsTarget
+        arrTemp = .Range(.Cells(startRow, startCol), .Cells(usedRow, usedCol))
+    End With
+    ConvertTargetFromRangeToArray = arrTemp
+End Function
+
+'from worksheet to array
+Public Function ConvertUsedRangeToArray(ByVal wsTarget As Worksheet, ByVal startRow As Integer, startCol As Integer) As Variant
+    Dim usedRow As Long, usedCol As Long, arrTemp As Variant
+
+    With wsTarget
+        usedRow = .UsedRange.Rows.Count
+        usedCol = .UsedRange.Columns.Count
+        arrTemp = .Range(.Cells(startRow, startCol), .Cells(usedRow, usedCol))
+    End With
+    ConvertUsedRangeToArray = arrTemp
+End Function
+
+'save As Worksheet Contents Into New Workbook
+Public Sub ExportWorksheet(ByVal wsTarget As Worksheet, ByVal pathOutput, ByVal wbTargetName As String)
+    Dim wbAct As Workbook
+    
+    wsTarget.Copy
+    Set wbAct = ActiveWorkbook
+    
+    With wbAct
+        .BuiltinDocumentProperties("Comments").Value = "INTERNAL"
+        .SaveAs fileName:=pathOutput & "\" & wbTargetName & ".xlsx"
+        .Close
+    End With
+End Sub
+
+'save as target workbook
+Public Sub SaveAsTargetWorkbook(ByRef wbTarget As Workbook, ByVal pathOutput, ByVal wbTargetName As String)
+    With wbTarget
+        .BuiltinDocumentProperties("Comments").Value = "INTERNAL"
+        .SaveAs fileName:=pathOutput & "\" & wbTargetName
+        .Close
+    End With
+End Sub
+
+'=============================================
+
+'UI related function
+
+'=============================================
+Public Function GetSingleFilePath() As String
+    GetSingleFilePath = ""
+    
+    With Application.FileDialog(1)
+        .AllowMultiSelect = False
+        If .Show = True Then
+            GetSingleFilePath = .SelectedItems(1)
+        End If
+    End With
+End Function
+
+Public Function GetMutiFilePath() As Variant
+    Dim i As Long, tempString As String
+    
+    GetMutiFilePath = ""
+    With Application.FileDialog(1)
+        .AllowMultiSelect = True
+        If .Show = True Then
+            For i = 1 To .SelectedItems.Count
+                tempString = tempString + .SelectedItems(i) + ","
+            Next
+            GetMutiFilePath = Split(tempString, ",")
+        End If
+    End With
+End Function
+
+Public Function GetFolderPath() As String
+    GetFolderPath = ""
+    
+    With Application.FileDialog(4)
+        .AllowMultiSelect = False
+        If .Show = True Then
+            GetFolderPath = .SelectedItems(1)
+        End If
+    End With
+End Function
+
+'=============================================
+
+'ADO Helper Assistant
+
+'=============================================
+Public Function GetExcelRecordSetArray(ByRef ADO As Object, ByVal sourcePath As String, ByVal strQuery, Optional ByVal includeHeader As Boolean = True) As Variant
+    With ADO
+        .ConnectExcel sourcePath
+        
+        If Len(.getErrMessage) = 0 Then
+            .OpenRecordSet strQuery
+            GetExcelRecordSetArray = .GetAllRowsData(includeHeader)
+        End If
+    End With
+End Function
+
+Public Function GetTxtRecordSetArray(ByRef ADO As HelperAdo, ByVal sourcePath As String, ByVal strQuery, Optional ByVal includeHeader As Boolean = True) As Variant
+    Dim ParentPath As String
+    
+    ParentPath = Left$(sourcePath, InStrRev(sourcePath, "\"))
+    
+    With ADO
+        .connectText ParentPath, includeHeader
+        
+        If Len(.getErrMessage) = 0 Then
+            .OpenRecordSet strQuery
+            GetTxtRecordSetArray = .GetAllRowsData(includeHeader)
+        End If
+    End With
+End Function
+
+Public Function GetAS400RecordSetArray(ByRef ADO As Object, ByVal serverName As String, ByVal userName As String, ByVal strQuery, Optional ByVal includeHeader As Boolean = True) As Variant
+    With ADO
+        .ConnectIBMDA400 serverName, userName
+        
+        If Len(.getErrMessage) = 0 Then
+            .OpenRecordSet strQuery
+            GetAS400RecordSetArray = .GetAllRowsData(includeHeader)
+        End If
+    End With
+End Function

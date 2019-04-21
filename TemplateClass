@@ -1,0 +1,53 @@
+Option Explicit
+
+Private Sub Class_Initialize()
+    Application.ScreenUpdating = False
+End Sub
+
+Private Sub Class_Terminate()
+    Application.ScreenUpdating = True
+    Application.StatusBar = False
+End Sub
+
+Public Property Let setProperty(ByVal val As String)
+
+End Property
+
+Public Property Get getProperty() As String
+
+End Property
+
+'**********************************************************
+' inner public method
+'**********************************************************
+Private Sub CheckAndRaiseError(ByVal errText As String, ByVal sourceTips As String)
+    If Len(errText) > 0 Then
+        Err.Raise 2, sourceTips, errText
+    End If
+End Sub
+
+'**********************************************************
+' verify necessary parameter
+'**********************************************************
+Private Sub CheckConfigValid()
+    Dim newVerify As New HelperSimpleVerify
+    
+    With newVerify
+        ' do verify check
+        
+        ' if parameter incorrect throw a error exception
+        Call CheckAndRaiseError(.GetErrorMessage, "Config Check")
+    End With
+End Sub
+
+'**********************************************************
+' process entrance point
+'**********************************************************
+Public Function Main() As Boolean
+    Main = False
+    Call CheckConfigValid
+    ' do something here
+    '
+    Main = True
+End Function
+
