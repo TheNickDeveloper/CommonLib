@@ -1,5 +1,3 @@
-' Create By: Eagle T X Chen on 2017-03-29
-
 Option Explicit
 Private Declare PtrSafe Sub Sleep Lib "kernel32.dll" (ByVal dwMilliseconds As Long)
 
