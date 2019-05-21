@@ -1,15 +1,3 @@
-'      Updated on 2017-04-18 update the function 'GetFieldValue', make it steady
-'      Updated on 2017-10-09 1. add new property 'CommandTimeOut'
-'                            2. add a function to connect oracle database
-'                            3. the function of 'GetTablesName' can return a dictionary or a string array
-'                            4. add a function 'GetAllRowsData' return a array of the recordset
-'      Updated on 2017-12-26 1. add new function 'CreateSchema', this help to query csv file
-'                            2. update 'GetAllRowsData'
-' v1.7 Updated on 2018-01-25 1. split 'CreateSchema' as 2 function 'CreateSchemaByDelimiter' / 'CreateSchemaByFieldLength'
-'                            2. enhance function 'GetAllRowsData'
-'                            3. adjust variant name & class property
-' v1.7.1 Updated on 2018-02-09 1. Fix code defect
-'                              2. Enhance function 'CreateSchemaByDelimiter' / 'CreateSchemaByFieldLength'
 Option Explicit
 
 'connect info variable
