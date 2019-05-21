@@ -7,10 +7,6 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
-' Create By: Eagle T X Chen at 2017-02-142 v1.0
-
-' Last update at 2017-03-29
-' Last update at 2017-06-29 add a new function 'BackToTheScreen', this function will let TREATS back to a specify screen
 
 Option Explicit
 Private Declare PtrSafe Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
